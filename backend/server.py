@@ -365,7 +365,7 @@ async def answer_question(document_id: str, request: QARequest):
     top_contexts = contexts[:request.context_limit]
     
     # Create context string
-    context_text = "\n\n".join([f"Section: {ctx[0]['title']}\nContent: {ctx[0]['content']}" for ctx, _ in top_contexts])
+    context_text = "\n\n".join([f"Section: {ctx['title']}\nContent: {ctx['content']}" for ctx, _ in top_contexts])
     
     # Generate answer using OpenAI
     try:
