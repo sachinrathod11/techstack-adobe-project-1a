@@ -209,7 +209,7 @@ class PDFOutlineExtractor:
         headings = self.post_process_headings(headings)
         
         # Sort by page number and then by appearance
-        headings.sort(key=lambda x: (x["page"], headings.index(x)))
+        headings.sort(key=lambda x: x["page"])
         
         return {
             "title": title,
