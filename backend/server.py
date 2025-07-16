@@ -390,7 +390,7 @@ async def answer_question(document_id: str, request: QARequest):
         return {
             "answer": answer,
             "question": request.question,
-            "relevant_sections": [ctx[0]['id'] for ctx, _ in top_contexts],
+            "relevant_sections": [ctx['id'] for ctx, _ in top_contexts],
             "confidence_scores": [sim for _, sim in top_contexts]
         }
     except Exception as e:
