@@ -333,12 +333,12 @@ class PDFReaderAPITester:
         except Exception as e:
             self.log_result("Offline Summarization - Exception", False, str(e))
 
-    def test_qa_functionality(self):
-        """Test Q&A functionality"""
-        print("\n🔍 Testing Q&A Functionality...")
+    def test_offline_qa_functionality(self):
+        """Test offline Q&A functionality using keyword matching"""
+        print("\n🔍 Testing Offline Q&A Functionality (Keyword Matching)...")
         
         if not self.test_document_id:
-            self.log_result("Q&A Functionality", False, "No test document ID available")
+            self.log_result("Offline Q&A Functionality", False, "No test document ID available")
             return
         
         try:
@@ -356,38 +356,63 @@ class PDFReaderAPITester:
                 data = response.json()
                 
                 # Verify response structure
-                required_fields = ['answer', 'question', 'relevant_sections', 'confidence_scores']
+                required_fields = ['answer', 'question', 'relevant_sections', 'confidence_scores', 'method']
                 missing_fields = [field for field in required_fields if field not in data]
                 
                 if missing_fields:
-                    self.log_result("Q&A - Response Structure", False, f"Missing fields: {missing_fields}")
+                    self.log_result("Offline Q&A - Response Structure", False, f"Missing fields: {missing_fields}")
                 else:
-                    self.log_result("Q&A - Response Structure", True, "All required fields present")
+                    self.log_result("Offline Q&A - Response Structure", True, "All required fields present")
+                
+                # Verify offline method is used
+                if data.get('method') == 'offline_keyword_matching':
+                    self.log_result("Offline Q&A - Method Verification", True, "Using offline keyword matching method")
+                else:
+                    self.log_result("Offline Q&A - Method Verification", False, f"Expected 'offline_keyword_matching', got '{data.get('method')}'")
                 
                 # Verify answer content
                 if len(data['answer']) > 20:
-                    self.log_result("Q&A - Answer Generation", True, f"Generated answer with {len(data['answer'])} characters")
+                    self.log_result("Offline Q&A - Answer Generation", True, f"Generated answer with {len(data['answer'])} characters")
                 else:
-                    self.log_result("Q&A - Answer Generation", False, "Answer too short")
+                    self.log_result("Offline Q&A - Answer Generation", False, "Answer too short")
                 
                 # Verify context awareness
                 if data['question'] == qa_data['question']:
-                    self.log_result("Q&A - Question Matching", True, "Question correctly preserved")
+                    self.log_result("Offline Q&A - Question Matching", True, "Question correctly preserved")
                 else:
-                    self.log_result("Q&A - Question Matching", False, "Question mismatch")
+                    self.log_result("Offline Q&A - Question Matching", False, "Question mismatch")
                 
-                # Verify confidence scoring
+                # Verify confidence scoring (similarity scores in offline mode)
                 if isinstance(data['confidence_scores'], list) and len(data['confidence_scores']) > 0:
                     avg_confidence = sum(data['confidence_scores']) / len(data['confidence_scores'])
-                    self.log_result("Q&A - Confidence Scoring", True, f"Average confidence: {avg_confidence:.3f}")
+                    self.log_result("Offline Q&A - Confidence Scoring", True, f"Average confidence: {avg_confidence:.3f}")
                 else:
-                    self.log_result("Q&A - Confidence Scoring", False, "No confidence scores provided")
+                    self.log_result("Offline Q&A - Confidence Scoring", False, "No confidence scores provided")
+                
+                # Test with technical question
+                tech_qa_data = {
+                    "document_id": self.test_document_id,
+                    "question": "How does semantic search work?",
+                    "context_limit": 2
+                }
+                
+                tech_response = self.session.post(f"{API_BASE}/documents/{self.test_document_id}/qa", 
+                                                json=tech_qa_data)
+                
+                if tech_response.status_code == 200:
+                    tech_data = tech_response.json()
+                    if tech_data.get('method') == 'offline_keyword_matching':
+                        self.log_result("Offline Q&A - Technical Question", True, "Technical question answered with offline method")
+                    else:
+                        self.log_result("Offline Q&A - Technical Question", False, "Technical question not using offline method")
+                else:
+                    self.log_result("Offline Q&A - Technical Question", False, f"Status {tech_response.status_code}")
                     
             else:
-                self.log_result("Q&A - HTTP Status", False, f"Status {response.status_code}: {response.text}")
+                self.log_result("Offline Q&A - HTTP Status", False, f"Status {response.status_code}: {response.text}")
                 
         except Exception as e:
-            self.log_result("Q&A - Exception", False, str(e))
+            self.log_result("Offline Q&A - Exception", False, str(e))
 
     def test_related_sections(self):
         """Test related sections discovery"""
