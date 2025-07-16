@@ -11,29 +11,47 @@ import uuid
 from datetime import datetime
 import PyPDF2
 import io
-import openai
 import json
 import tiktoken
 import re
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import base64
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import nltk
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+from collections import Counter
+import heapq
 
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Download required NLTK data
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# OpenAI client
-openai.api_key = os.environ['OPENAI_API_KEY']
-openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-
-# Initialize sentence transformer for embeddings
+# Initialize sentence transformer for embeddings (cached locally)
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Initialize text processing tools
+stemmer = PorterStemmer()
+stop_words = set(stopwords.words('english'))
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -55,6 +73,7 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     structure: List[Dict[str, Any]]
     embedding_segments: List[Dict[str, Any]]
+    pdf_base64: Optional[str] = None
 
 class DocumentSection(BaseModel):
     id: str
@@ -83,15 +102,15 @@ class SearchResult(BaseModel):
 class SummarizeRequest(BaseModel):
     document_id: str
     section_id: Optional[str] = None
-    max_length: int = 500
+    max_length: int = 5
 
 class QARequest(BaseModel):
     document_id: str
     question: str
     context_limit: int = 3
 
-def extract_text_from_pdf(file_content: bytes) -> tuple[str, int]:
-    """Extract text from PDF file and return content with page count"""
+def extract_text_from_pdf(file_content: bytes) -> tuple[str, int, str]:
+    """Extract text from PDF file and return content, page count, and base64 PDF"""
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
         text = ""
@@ -101,7 +120,10 @@ def extract_text_from_pdf(file_content: bytes) -> tuple[str, int]:
             page_text = page.extract_text()
             text += f"\n--- Page {page_num} ---\n{page_text}\n"
         
-        return text, page_count
+        # Convert PDF to base64 for frontend
+        pdf_base64 = base64.b64encode(file_content).decode('utf-8')
+        
+        return text, page_count, pdf_base64
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error extracting PDF: {str(e)}")
 
@@ -216,6 +238,119 @@ def find_related_sections(target_segment: Dict[str, Any], all_segments: List[Dic
     similarities.sort(key=lambda x: x[1], reverse=True)
     return [seg_id for seg_id, _ in similarities[:limit]]
 
+def preprocess_text(text: str) -> List[str]:
+    """Preprocess text for summarization"""
+    # Remove page markers and clean text
+    text = re.sub(r'--- Page \d+ ---', '', text)
+    text = re.sub(r'\n+', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Tokenize into sentences
+    sentences = sent_tokenize(text)
+    
+    # Clean sentences
+    cleaned_sentences = []
+    for sentence in sentences:
+        # Remove very short sentences
+        if len(sentence.split()) > 5:
+            cleaned_sentences.append(sentence.strip())
+    
+    return cleaned_sentences
+
+def calculate_sentence_scores(sentences: List[str], title: str = "") -> Dict[str, float]:
+    """Calculate importance scores for sentences using TF-IDF"""
+    # Combine title with sentences for better context
+    all_text = [title] + sentences if title else sentences
+    
+    # Create TF-IDF vectors
+    vectorizer = TfidfVectorizer(stop_words='english', max_features=100)
+    
+    try:
+        tfidf_matrix = vectorizer.fit_transform(all_text)
+        
+        # Calculate average TF-IDF score for each sentence
+        sentence_scores = {}
+        for i, sentence in enumerate(sentences):
+            if i + (1 if title else 0) < tfidf_matrix.shape[0]:
+                score = tfidf_matrix[i + (1 if title else 0)].mean()
+                sentence_scores[sentence] = score
+            else:
+                sentence_scores[sentence] = 0.0
+                
+        return sentence_scores
+    except:
+        # Fallback to length-based scoring
+        return {sentence: len(sentence.split()) for sentence in sentences}
+
+def extract_summary_offline(text: str, title: str = "", max_sentences: int = 5) -> str:
+    """Generate extractive summary using TF-IDF"""
+    sentences = preprocess_text(text)
+    
+    if len(sentences) <= max_sentences:
+        return " ".join(sentences)
+    
+    # Calculate sentence scores
+    sentence_scores = calculate_sentence_scores(sentences, title)
+    
+    # Get top sentences
+    top_sentences = heapq.nlargest(max_sentences, sentence_scores.items(), key=lambda x: x[1])
+    
+    # Sort by original order
+    summary_sentences = []
+    for sentence, score in top_sentences:
+        summary_sentences.append(sentence)
+    
+    # Sort by position in original text
+    summary_sentences.sort(key=lambda x: sentences.index(x) if x in sentences else 0)
+    
+    return " ".join(summary_sentences)
+
+def answer_question_offline(question: str, context_segments: List[Dict[str, Any]]) -> str:
+    """Answer question using keyword matching and context similarity"""
+    # Extract keywords from question
+    question_words = set(word_tokenize(question.lower()))
+    question_words = {word for word in question_words if word not in stop_words and word.isalpha()}
+    
+    if not question_words:
+        return "I couldn't understand the question. Please try rephrasing it."
+    
+    # Find best matching segments
+    best_matches = []
+    for segment in context_segments:
+        content = segment['content'].lower()
+        content_words = set(word_tokenize(content))
+        
+        # Calculate keyword overlap
+        overlap = len(question_words.intersection(content_words))
+        if overlap > 0:
+            score = overlap / len(question_words)
+            best_matches.append((segment, score))
+    
+    if not best_matches:
+        return "I couldn't find relevant information to answer your question."
+    
+    # Sort by relevance
+    best_matches.sort(key=lambda x: x[1], reverse=True)
+    
+    # Get the best matching segment
+    best_segment = best_matches[0][0]
+    
+    # Extract relevant sentences from the best segment
+    sentences = sent_tokenize(best_segment['content'])
+    relevant_sentences = []
+    
+    for sentence in sentences:
+        sentence_words = set(word_tokenize(sentence.lower()))
+        if len(question_words.intersection(sentence_words)) > 0:
+            relevant_sentences.append(sentence)
+    
+    if relevant_sentences:
+        # Return the most relevant sentences
+        return " ".join(relevant_sentences[:3])
+    else:
+        # Fallback to first part of the segment
+        return best_segment['content'][:500] + "..."
+
 # API Routes
 @api_router.post("/documents/upload", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)):
@@ -226,8 +361,8 @@ async def upload_document(file: UploadFile = File(...)):
     # Read file content
     file_content = await file.read()
     
-    # Extract text and page count
-    text, page_count = extract_text_from_pdf(file_content)
+    # Extract text, page count, and base64 PDF
+    text, page_count, pdf_base64 = extract_text_from_pdf(file_content)
     
     # Detect document structure
     structure = detect_document_structure(text)
@@ -243,7 +378,8 @@ async def upload_document(file: UploadFile = File(...)):
         'total_pages': page_count,
         'created_at': datetime.utcnow(),
         'structure': structure,
-        'embedding_segments': embedding_segments
+        'embedding_segments': embedding_segments,
+        'pdf_base64': pdf_base64
     }
     
     await db.documents.insert_one(document_data)
@@ -298,7 +434,7 @@ async def search_document(document_id: str, search_query: SearchQuery):
 
 @api_router.post("/documents/{document_id}/summarize")
 async def summarize_document(document_id: str, request: SummarizeRequest):
-    """Summarize a document or specific section"""
+    """Summarize a document or specific section using offline methods"""
     document = await db.documents.find_one({'id': document_id})
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -313,40 +449,25 @@ async def summarize_document(document_id: str, request: SummarizeRequest):
         title = section['title']
     else:
         # Summarize entire document
-        content = document['content'][:4000]  # Limit content for API
+        content = document['content']
         title = document['title']
     
-    # Generate summary using OpenAI
+    # Generate summary using offline method
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"You are a helpful assistant that creates concise summaries. Summarize the following text in {request.max_length} words or less."
-                },
-                {
-                    "role": "user",
-                    "content": f"Title: {title}\n\nContent: {content}"
-                }
-            ],
-            max_tokens=min(request.max_length * 2, 1000),
-            temperature=0.3
-        )
-        
-        summary = response.choices[0].message.content
+        summary = extract_summary_offline(content, title, request.max_length)
         
         return {
             "summary": summary,
             "title": title,
-            "word_count": len(summary.split())
+            "word_count": len(summary.split()),
+            "method": "offline_extractive"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating summary: {str(e)}")
 
 @api_router.post("/documents/{document_id}/qa")
 async def answer_question(document_id: str, request: QARequest):
-    """Answer questions about the document"""
+    """Answer questions about the document using offline methods"""
     document = await db.documents.find_one({'id': document_id})
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -364,34 +485,17 @@ async def answer_question(document_id: str, request: QARequest):
     contexts.sort(key=lambda x: x[1], reverse=True)
     top_contexts = contexts[:request.context_limit]
     
-    # Create context string
-    context_text = "\n\n".join([f"Section: {ctx['title']}\nContent: {ctx['content']}" for ctx, _ in top_contexts])
-    
-    # Generate answer using OpenAI
+    # Generate answer using offline method
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that answers questions based on the provided document context. Only answer based on the given context, and mention if the answer is not found in the context."
-                },
-                {
-                    "role": "user",
-                    "content": f"Context from document:\n{context_text}\n\nQuestion: {request.question}"
-                }
-            ],
-            max_tokens=500,
-            temperature=0.3
-        )
-        
-        answer = response.choices[0].message.content
+        context_segments = [ctx[0] for ctx in top_contexts]
+        answer = answer_question_offline(request.question, context_segments)
         
         return {
             "answer": answer,
             "question": request.question,
-            "relevant_sections": [ctx['id'] for ctx, _ in top_contexts],
-            "confidence_scores": [sim for _, sim in top_contexts]
+            "relevant_sections": [ctx[0]['id'] for ctx in top_contexts],
+            "confidence_scores": [sim for _, sim in top_contexts],
+            "method": "offline_keyword_matching"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating answer: {str(e)}")
@@ -423,6 +527,21 @@ async def get_related_sections(document_id: str, section_id: str):
             })
     
     return related_sections
+
+@api_router.get("/documents/{document_id}/pdf")
+async def get_pdf_content(document_id: str):
+    """Get PDF content as base64 for offline viewing"""
+    document = await db.documents.find_one({'id': document_id})
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    if 'pdf_base64' not in document:
+        raise HTTPException(status_code=404, detail="PDF content not available")
+    
+    return {
+        "pdf_base64": document['pdf_base64'],
+        "title": document['title']
+    }
 
 # Include the router in the main app
 app.include_router(api_router)

@@ -15,11 +15,13 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('structure');
   const [relatedSections, setRelatedSections] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [pdfData, setPdfData] = useState(null);
   const fileInputRef = useRef(null);
-  const pdfViewerRef = useRef(null);
+  const canvasRef = useRef(null);
 
   const API_BASE_URL = process.env.REACT_APP_BACKEND_URL;
-  const ADOBE_CLIENT_ID = process.env.REACT_APP_ADOBE_CLIENT_ID;
 
   useEffect(() => {
     fetchDocuments();
@@ -27,7 +29,7 @@ const App = () => {
 
   useEffect(() => {
     if (selectedDocument) {
-      loadPDFViewer();
+      loadPDFContent();
     }
   }, [selectedDocument]);
 
@@ -37,6 +39,70 @@ const App = () => {
       setDocuments(response.data);
     } catch (error) {
       console.error('Error fetching documents:', error);
+    }
+  };
+
+  const loadPDFContent = async () => {
+    if (!selectedDocument) return;
+    
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/documents/${selectedDocument.id}/pdf`);
+      setPdfData(response.data.pdf_base64);
+      setTotalPages(selectedDocument.total_pages);
+      setCurrentPage(1);
+      
+      // Load PDF.js dynamically
+      if (window.pdfjsLib) {
+        renderPDF(response.data.pdf_base64);
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = () => {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          renderPDF(response.data.pdf_base64);
+        };
+        document.head.appendChild(script);
+      }
+    } catch (error) {
+      console.error('Error loading PDF content:', error);
+    }
+  };
+
+  const renderPDF = async (base64Data) => {
+    try {
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const pdf = await window.pdfjsLib.getDocument({data: bytes}).promise;
+      const page = await pdf.getPage(currentPage);
+      
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      
+      const viewport = page.getViewport({scale: 1.5});
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      };
+      
+      await page.render(renderContext).promise;
+    } catch (error) {
+      console.error('Error rendering PDF:', error);
+    }
+  };
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      if (pdfData) {
+        renderPDF(pdfData);
+      }
     }
   };
 
@@ -65,34 +131,6 @@ const App = () => {
     }
   };
 
-  const loadPDFViewer = async () => {
-    if (!selectedDocument || !window.AdobeDC) return;
-
-    const adobeDCView = new window.AdobeDC.View({
-      clientId: ADOBE_CLIENT_ID,
-      divId: "adobe-dc-view",
-      locale: "en-US",
-    });
-
-    // For demo purposes, we'll use a sample PDF
-    // In production, you would serve the actual PDF file
-    const samplePDF = "https://www.w3.org/WAI/WCAG21/working-examples/pdf-table/table.pdf";
-    
-    adobeDCView.previewFile({
-      content: { location: { url: samplePDF } },
-      metaData: { fileName: selectedDocument.title }
-    }, {
-      embedMode: "SIZED_CONTAINER",
-      showAnnotationTools: false,
-      showLeftHandPanel: false,
-      showDownloadPDF: false,
-      showPrintPDF: false,
-      showZoomControl: true,
-      defaultViewMode: "FIT_PAGE",
-      enableFormFilling: false
-    });
-  };
-
   const handleSearch = async () => {
     if (!selectedDocument || !searchQuery.trim()) return;
 
@@ -118,6 +156,14 @@ const App = () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/documents/${selectedDocument.id}/related/${section.id}`);
       setRelatedSections(response.data);
+      
+      // Navigate to section's page
+      if (section.page_number && section.page_number !== currentPage) {
+        setCurrentPage(section.page_number);
+        if (pdfData) {
+          renderPDF(pdfData);
+        }
+      }
     } catch (error) {
       console.error('Error loading related sections:', error);
     }
@@ -131,10 +177,10 @@ const App = () => {
       const response = await axios.post(`${API_BASE_URL}/api/documents/${selectedDocument.id}/summarize`, {
         document_id: selectedDocument.id,
         section_id: sectionId,
-        max_length: 200
+        max_length: 5
       });
       
-      alert(`Summary: ${response.data.summary}`);
+      alert(`Summary (${response.data.method}):\n\n${response.data.summary}`);
     } catch (error) {
       console.error('Error summarizing:', error);
       alert('Error generating summary. Please try again.');
@@ -264,7 +310,7 @@ const App = () => {
       
       {qaAnswer && (
         <div className="bg-green-50 p-4 rounded-lg">
-          <h4 className="font-medium text-sm mb-2">Answer:</h4>
+          <h4 className="font-medium text-sm mb-2">Answer ({qaAnswer.method}):</h4>
           <p className="text-sm text-gray-700 mb-3">{qaAnswer.answer}</p>
           <div className="text-xs text-gray-500">
             Based on {qaAnswer.relevant_sections.length} relevant sections
@@ -308,7 +354,10 @@ const App = () => {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-gray-900">Intelligent PDF Reader</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Offline PDF Reader</h1>
+              <div className="text-sm text-green-600 bg-green-100 px-2 py-1 rounded">
+                ✓ Works Without Internet
+              </div>
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="p-2 rounded-md hover:bg-gray-100"
@@ -410,9 +459,43 @@ const App = () => {
         {/* Main Content */}
         <div className="flex-1 bg-white">
           {selectedDocument ? (
-            <div className="h-full">
+            <div className="h-full flex flex-col">
+              {/* PDF Controls */}
+              <div className="bg-gray-50 border-b p-4 flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage <= 1}
+                    className="px-3 py-1 bg-gray-200 text-gray-700 rounded disabled:opacity-50"
+                  >
+                    ← Previous
+                  </button>
+                  <span className="text-sm">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                    className="px-3 py-1 bg-gray-200 text-gray-700 rounded disabled:opacity-50"
+                  >
+                    Next →
+                  </button>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {selectedDocument.title}
+                </div>
+              </div>
+
               {/* PDF Viewer */}
-              <div id="adobe-dc-view" className="h-full w-full"></div>
+              <div className="flex-1 overflow-auto p-4 bg-gray-100">
+                <div className="flex justify-center">
+                  <canvas
+                    ref={canvasRef}
+                    className="border border-gray-300 shadow-lg bg-white"
+                    style={{ maxWidth: '100%', height: 'auto' }}
+                  />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -421,7 +504,7 @@ const App = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No document selected</h3>
-                <p className="text-gray-500 mb-4">Upload a PDF to get started with intelligent reading</p>
+                <p className="text-gray-500 mb-4">Upload a PDF to get started with offline intelligent reading</p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -433,9 +516,6 @@ const App = () => {
           )}
         </div>
       </div>
-
-      {/* Adobe PDF Embed API Script */}
-      <script src="https://documentservices.adobe.com/view-sdk/viewer.js"></script>
     </div>
   );
 };
