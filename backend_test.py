@@ -265,19 +265,19 @@ class PDFReaderAPITester:
         except Exception as e:
             self.log_result("Semantic Search - Exception", False, str(e))
 
-    def test_ai_summarization(self):
-        """Test AI-powered summarization"""
-        print("\n🔍 Testing AI-Powered Summarization...")
+    def test_offline_summarization(self):
+        """Test offline TF-IDF based summarization"""
+        print("\n🔍 Testing Offline Summarization (TF-IDF)...")
         
         if not self.test_document_id:
-            self.log_result("AI Summarization", False, "No test document ID available")
+            self.log_result("Offline Summarization", False, "No test document ID available")
             return
         
         try:
             # Test document summarization
             summary_data = {
                 "document_id": self.test_document_id,
-                "max_length": 200
+                "max_length": 5
             }
             
             response = self.session.post(f"{API_BASE}/documents/{self.test_document_id}/summarize", 
@@ -287,41 +287,51 @@ class PDFReaderAPITester:
                 data = response.json()
                 
                 # Verify response structure
-                required_fields = ['summary', 'title', 'word_count']
+                required_fields = ['summary', 'title', 'word_count', 'method']
                 missing_fields = [field for field in required_fields if field not in data]
                 
                 if missing_fields:
-                    self.log_result("AI Summarization - Response Structure", False, f"Missing fields: {missing_fields}")
+                    self.log_result("Offline Summarization - Response Structure", False, f"Missing fields: {missing_fields}")
                 else:
-                    self.log_result("AI Summarization - Response Structure", True, "All required fields present")
+                    self.log_result("Offline Summarization - Response Structure", True, "All required fields present")
+                
+                # Verify offline method is used
+                if data.get('method') == 'offline_extractive':
+                    self.log_result("Offline Summarization - Method Verification", True, "Using offline extractive method")
+                else:
+                    self.log_result("Offline Summarization - Method Verification", False, f"Expected 'offline_extractive', got '{data.get('method')}'")
                 
                 # Verify summary content
                 if len(data['summary']) > 50:
-                    self.log_result("AI Summarization - Content Generation", True, f"Generated {data['word_count']} words")
+                    self.log_result("Offline Summarization - Content Generation", True, f"Generated {data['word_count']} words")
                 else:
-                    self.log_result("AI Summarization - Content Generation", False, "Summary too short")
+                    self.log_result("Offline Summarization - Content Generation", False, "Summary too short")
                 
                 # Test section-specific summarization if we have a section ID
                 if self.test_section_id:
                     section_summary_data = {
                         "document_id": self.test_document_id,
                         "section_id": self.test_section_id,
-                        "max_length": 100
+                        "max_length": 3
                     }
                     
                     response = self.session.post(f"{API_BASE}/documents/{self.test_document_id}/summarize", 
                                                json=section_summary_data)
                     
                     if response.status_code == 200:
-                        self.log_result("AI Summarization - Section Specific", True, "Section summarization successful")
+                        section_data = response.json()
+                        if section_data.get('method') == 'offline_extractive':
+                            self.log_result("Offline Summarization - Section Specific", True, "Section summarization successful with offline method")
+                        else:
+                            self.log_result("Offline Summarization - Section Specific", False, "Section summarization not using offline method")
                     else:
-                        self.log_result("AI Summarization - Section Specific", False, f"Status {response.status_code}")
+                        self.log_result("Offline Summarization - Section Specific", False, f"Status {response.status_code}")
                         
             else:
-                self.log_result("AI Summarization - HTTP Status", False, f"Status {response.status_code}: {response.text}")
+                self.log_result("Offline Summarization - HTTP Status", False, f"Status {response.status_code}: {response.text}")
                 
         except Exception as e:
-            self.log_result("AI Summarization - Exception", False, str(e))
+            self.log_result("Offline Summarization - Exception", False, str(e))
 
     def test_qa_functionality(self):
         """Test Q&A functionality"""
