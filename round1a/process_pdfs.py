@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Optimized PyMuPDF-based PDF outline extractor for Adobe Hackathon Round 1A
-Reduced memory footprint and improved efficiency for Docker deployment
-"""
-
 import json
 import statistics
 import fitz  # PyMuPDF
@@ -16,7 +10,6 @@ OUTPUT = Path("/app/output")
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
 def extract_spans(doc):
-    """Extract text spans with minimal memory usage"""
     spans = []
     for pno, page in enumerate(doc):
         blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_LIGATURES)["blocks"]
@@ -38,7 +31,6 @@ def extract_spans(doc):
     return spans
 
 def merge_lines(spans):
-    """Efficiently merge spans into complete lines"""
     if not spans:
         return []
 
@@ -69,7 +61,6 @@ def merge_lines(spans):
     return lines
 
 def classify_headings(lines):
-    """Classify lines into heading levels using font analysis"""
     if not lines:
         return None, []
 
@@ -113,7 +104,6 @@ def classify_headings(lines):
     return title, outline
 
 def process_pdf(pdf_path):
-    """Process a single PDF with memory-efficient approach"""
     try:
         with fitz.open(pdf_path) as doc:
             spans = extract_spans(doc)
@@ -135,7 +125,6 @@ def process_pdf(pdf_path):
         }
 
 def main():
-    """Main processing loop"""
     pdf_files = list(INPUT.glob("*.pdf"))
 
     if not pdf_files:

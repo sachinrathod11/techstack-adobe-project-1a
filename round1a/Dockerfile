@@ -1,7 +1,3 @@
-# Optimized Dockerfile for Adobe Hackathon Round 1A
-# Target: <200MB final image size
-
-# Multi-stage build to minimize final image size
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
