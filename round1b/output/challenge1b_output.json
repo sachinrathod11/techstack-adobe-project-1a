@@ -1,0 +1,92 @@
+{
+  "metadata": {
+    "input_documents": [
+      "Breakfast Ideas.pdf",
+      "Dinner Ideas - Mains_1.pdf",
+      "Dinner Ideas - Mains_2.pdf",
+      "Dinner Ideas - Mains_3.pdf",
+      "Dinner Ideas - Sides_1.pdf",
+      "Dinner Ideas - Sides_2.pdf",
+      "Dinner Ideas - Sides_3.pdf",
+      "Dinner Ideas - Sides_4.pdf",
+      "Learn Acrobat - Create and Convert_1.pdf",
+      "Learn Acrobat - Create and Convert_2.pdf",
+      "Learn Acrobat - Edit_1.pdf",
+      "Learn Acrobat - Edit_2.pdf",
+      "Learn Acrobat - Export_1.pdf",
+      "Learn Acrobat - Export_2.pdf",
+      "Learn Acrobat - Fill and Sign.pdf",
+      "Learn Acrobat - Generative AI_1.pdf",
+      "Learn Acrobat - Generative AI_2.pdf",
+      "Learn Acrobat - Request e-signatures_1.pdf",
+      "Learn Acrobat - Request e-signatures_2.pdf",
+      "Learn Acrobat - Share_1.pdf",
+      "Learn Acrobat - Share_2.pdf",
+      "Lunch Ideas.pdf",
+      "Test Your Acrobat Exporting Skills.pdf",
+      "The Ultimate PDF Sharing Checklist.pdf"
+    ],
+    "persona": "Travel Planner",
+    "job_to_be_done": "Plan a trip of 4 days for a group of 10 college friends to South of France",
+    "processing_timestamp": "2025-11-02T09:48:43.812418"
+  },
+  "extracted_sections": [
+    {
+      "document": "Breakfast Ideas.pdf",
+      "section_title": "Instructions:",
+      "importance_rank": 1,
+      "page_number": 8
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "section_title": "Instructions:",
+      "importance_rank": 2,
+      "page_number": 5
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "section_title": "Instructions:",
+      "importance_rank": 3,
+      "page_number": 6
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "section_title": "Instructions:",
+      "importance_rank": 4,
+      "page_number": 9
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "section_title": "Instructions:",
+      "importance_rank": 5,
+      "page_number": 10
+    }
+  ],
+  "subsection_analysis": [
+    {
+      "document": "Breakfast Ideas.pdf",
+      "refined_text": "• Preheat oven to 375°F (190°C). • In a bowl, mix flour, sugar, baking powder, and salt. • In another bowl, combine milk, vegetable oil, egg, and vanilla extract. • Pour the wet ingredients into the dry ingredients and stir until just combined. • Fold in the berries. • Divide the batter evenly among a greased muﬃn tin. • Bake for 20 -25 minutes or until a toothpick inserted into the center comes out clean. • Let cool before serving.",
+      "page_number": 8
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "refined_text": "• Preheat oven to 375°F (190°C). • In a skillet, cook ground beef, diced onion, and minced garlic until browned. • Stir in marinara sauce and simmer for 10 minutes",
+      "page_number": 5
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "refined_text": "• Cook fettuccine according to package instructio ns. • In a skillet, melt butter over medium heat. • Add minced garlic and sauté until fragrant",
+      "page_number": 6
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "refined_text": "• In a bowl, mix yogurt, lemon juice, minced garlic, grated ginger, cumin, coriander, turmeric, paprika, and garam masala. • Marinate chicken cubes in the mixture for at least 1 hour. • In a large skillet, heat vegetable oil over medium heat",
+      "page_number": 9
+    },
+    {
+      "document": "Dinner Ideas - Mains_1.pdf",
+      "refined_text": "• Preheat oven to 375°F (190°C). • Season eggplant slices with salt and let sit for 30 minutes, then pat dry. • Dredge eggplant in flour, dip in beaten eggs, and coat with a mixture of breadcrumbs and grated Parmesan cheese",
+      "page_number": 10
+    }
+  ]
+}
